@@ -1,0 +1,81 @@
+services:
+  nifi:
+    image: apache/nifi:latest
+    ports:
+      - "8080:8080"  # Port untuk mengakses NiFi
+    environment:
+      - NIFI_WEB_HTTP_PORT=8080
+    # volumes: 
+    #   - ./nifi/templates/flow.json.gz:/opt/nifi/nifi-current/conf/flow.json.gz
+    #   - ./nifi/templates/flow.xml.gz:/opt/nifi/nifi-current/conf/flow.xml.gz
+    #mem_limit: 2g  # Memori 2GB
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
+    container_name: spark-master
+    ports:
+      - "8080:8080"  # Spark Web UI
+      - "7077:7077"  # Spark Master port
+      - "4040:4040"  # Spark Application UI
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    volumes:
+      - ./spark/src:/app/src
+      - ./spark/data:/app/data
+    network_mode: "host"
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+    volumes:
+      - ./spark/src:/app/src
+      - ./spark/data:/app/data
+    network_mode: "host"
+    deploy:
+      replicas: 2
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    # networks:
+    #   - spark-network
+    network_mode: "host"
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    depends_on:
+      - namenode
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    network_mode: "host"
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+
+networks:
+  spark-network:
+    driver: bridge
